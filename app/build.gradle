@@ -39,6 +39,11 @@ android {
         tasks["merge${variant.name.capitalize()}Assets"]
             .dependsOn("externalNativeBuild${variant.name.capitalize()}")
     }
+    applicationVariants.all { variant ->
+            variant.outputs.all {
+                outputFileName = "sdl2Display.apk"
+            }
+    }
     if (!project.hasProperty('EXCLUDE_NATIVE_LIBS')) {
         sourceSets.main {
             jniLibs.srcDir 'libs'
