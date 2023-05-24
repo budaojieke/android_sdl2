@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <thread>
+#include <mutex>
 #include <vector>
 #include <map>
 #include <algorithm>
@@ -45,6 +46,7 @@ static const char * const gFormatStr[] = {
 };
 
 std::map<int, imgInfo> gMap;
+std::mutex gMtx;
 
 
 SDL_Window   *Sdl::mWin = nullptr;
@@ -193,11 +195,11 @@ int32_t Sdl::recvBufAndImg(int acceptfd, int32_t imgIndex)
     }
 
     if (SUCCEED(rc)) {
+        std::lock_guard<std::mutex> lck (gMtx);
         auto it = gMap.find(acceptfd);
         if(it != gMap.end()) {
 
-                LOGI("recv acceptfd buf %d", acceptfd);
-
+            LOGI("recv acceptfd buf %d", acceptfd);
             if (it->second.img[imgIndex] == nullptr) {
                 it->second.img[imgIndex] = (uint8_t *) malloc(buf.size);
                 if (ISNULL(it->second.img[imgIndex])) {
@@ -381,15 +383,19 @@ void Sdl::threadSocket(int acceptfd)
 {
     imgInfo info = {0};
 
-    for (int i = 0; i < 5; i++) {
-        if (mDisplayRect[i] == false) {
-            mDisplayRect[i] = true;
-            info.location = i;
-            break;
+    {
+        std::lock_guard<std::mutex> lck (gMtx);
+
+        for (int i = 0; i < MAX_TEST_CASE; i++) {
+            if (mDisplayRect[i] == false) {
+                mDisplayRect[i] = true;
+                info.location = i;
+                break;
+            }
         }
+        gMap[acceptfd] = info;
     }
 
-    gMap[acceptfd] = info;
     while(1) {
         MsgCmd msg = START;
         if (recv(acceptfd, &msg, sizeof(msg), 0) <= 0) {
@@ -415,6 +421,7 @@ void Sdl::threadSocket(int acceptfd)
     SECURE_FREE(info.img[0]);
     SECURE_FREE(info.img[1]);
     mDisplayRect[info.location] = false;
+    std::lock_guard<std::mutex> lck (gMtx);
     gMap.erase(acceptfd);
 
     LOGI("---------- exit %d", acceptfd);
@@ -445,6 +452,7 @@ void Sdl::threadSdl()
         while(!quit) {
             sem_wait(&mSocket2Sdl);
             SDL_RenderClear(mRender);
+            std::lock_guard<std::mutex> lck (gMtx);
             for (auto &it : gMap) {
                 if (it.second.ready) {
                     rc = updateTextureAndRenderCopy(it.second);
