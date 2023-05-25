@@ -1,7 +1,5 @@
-package org.libsdl.app;
+package org.pandora.app;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -11,7 +9,6 @@ import android.os.Build;
 import android.util.Log;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
@@ -22,12 +19,11 @@ import android.os.Looper;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 
 public class HIDDeviceManager {
     private static final String TAG = "hidapi";
-    private static final String ACTION_USB_PERMISSION = "org.libsdl.app.USB_PERMISSION";
+    private static final String ACTION_USB_PERMISSION = "org.pandora.app.USB_PERMISSION";
 
     private static HIDDeviceManager sManager;
     private static int sManagerRefCount = 0;

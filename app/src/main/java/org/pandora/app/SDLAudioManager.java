@@ -1,4 +1,4 @@
-package org.libsdl.app;
+package org.pandora.app;
 
 import android.media.AudioFormat;
 import android.media.AudioManager;

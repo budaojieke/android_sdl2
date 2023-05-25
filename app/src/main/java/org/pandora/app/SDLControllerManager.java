@@ -1,4 +1,4 @@
-package org.libsdl.app;
+package org.pandora.app;
 
 import java.util.ArrayList;
 import java.util.Collections;

@@ -1,4 +1,4 @@
-package org.libsdl.app;
+package org.pandora.app;
 
 import android.content.Context;
 import android.bluetooth.BluetoothDevice;

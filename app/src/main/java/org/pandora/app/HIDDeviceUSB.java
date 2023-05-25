@@ -1,4 +1,4 @@
-package org.libsdl.app;
+package org.pandora.app;
 
 import android.hardware.usb.*;
 import android.os.Build;
