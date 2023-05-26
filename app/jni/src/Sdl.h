@@ -29,21 +29,14 @@ private:
     static int32_t displayProgress(imgInfo &info);
 
 private:
-    int32_t mId;
-    static SDL_Window   *mWin;
-    static SDL_Renderer *mRender;
-    static SDL_Texture  *mTexture;
-    static _TTF_Font    *mFont;
+    static bool            mQuit;
+    static SDL_Window     *mWin;
+    static SDL_Renderer   *mRender;
+    static _TTF_Font      *mFont;
     static SDL_DisplayMode mMode;
-    static bool          mDisplayRect[MAX_TEST_CASE]; //screen max test
+    static bool            mDisplayRect[MAX_TEST_CASE]; //screen max test
 
-    bool          mWinCreated;
-    uint8_t      *mImageBuf;
-    int32_t       mTotalFrame;
-    int32_t       mPercentage;
-    int32_t       mFrameNum;
-    int32_t       mSockfd;
-
+    int32_t      mSockfd;
     static sem_t mSocket2Sdl;
     static sem_t mSdl2Socket;
 };

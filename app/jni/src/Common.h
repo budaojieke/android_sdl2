@@ -1,7 +1,7 @@
 #ifndef ANDROID_PROJECT_COMMON_H
 #define ANDROID_PROJECT_COMMON_H
 
-//#include <atomic>
+#include <android/log.h>
 
 #define TAG "SDL"
 

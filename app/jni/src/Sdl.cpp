@@ -7,13 +7,13 @@
 #include <map>
 #include <algorithm>
 #include <unistd.h>
-#include <android/log.h>
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include "Sdl.h"
 
@@ -48,7 +48,7 @@ static const char * const gFormatStr[] = {
 std::map<int, imgInfo> gMap;
 std::mutex gMtx;
 
-
+bool          Sdl::mQuit = false;
 SDL_Window   *Sdl::mWin = nullptr;
 SDL_Renderer *Sdl::mRender = nullptr;
 _TTF_Font    *Sdl::mFont = nullptr;
@@ -66,6 +66,14 @@ int32_t Sdl::socketInit()
     if (SUCCEED(rc)) {
         if((mSockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             LOGE("fail to socket %s", strerror(errno));
+            rc = SYS_ERROR;
+        }
+    }
+
+    if (SUCCEED(rc)) {
+        int iSockOptVal = 1;
+        if (setsockopt(mSockfd, SOL_SOCKET, SO_REUSEADDR, &iSockOptVal, sizeof(iSockOptVal)) < 0) {
+            LOGE("fail to setsockopt %s", strerror(errno));
             rc = SYS_ERROR;
         }
     }
@@ -396,13 +404,12 @@ void Sdl::threadSocket(int acceptfd)
         gMap[acceptfd] = info;
     }
 
-    while(1) {
+    while(!mQuit) {
         MsgCmd msg = START;
         if (recv(acceptfd, &msg, sizeof(msg), 0) <= 0) {
-            LOGI("---------- fail to recv");
+            LOGE("fail to recv %s", strerror(errno));
             break;
         }
-        LOGI("---------- acceptfd %d msg %d", acceptfd, msg);
 
         if (msg == FRAME_IN || msg == FRAME_OUT) {
             int32_t imgIndex = msg - FRAME_IN;
@@ -430,7 +437,6 @@ void Sdl::threadSocket(int acceptfd)
 void Sdl::threadSdl()
 {
     int32_t rc = NO_ERROR;
-    bool quit = false;
 
     if (SUCCEED(rc)) {
         rc = createWindow();
@@ -449,7 +455,7 @@ void Sdl::threadSdl()
     }
 
     if (SUCCEED(rc)) {
-        while(!quit) {
+        while(!mQuit) {
             sem_wait(&mSocket2Sdl);
             SDL_RenderClear(mRender);
             std::lock_guard<std::mutex> lck (gMtx);
@@ -467,17 +473,6 @@ void Sdl::threadSdl()
             }
             SDL_RenderPresent(mRender);
             sem_post(&mSdl2Socket);
-
-            SDL_Event event;
-            event.type = 0;
-            while (SDL_PollEvent(&event)) {
-                switch (event.type) {
-                    case SDL_QUIT: {
-                        quit = true;
-                        break;
-                    }
-                }
-            }
         }
     }
 }
@@ -485,34 +480,84 @@ void Sdl::threadSdl()
 int32_t Sdl::process()
 {
     int32_t rc = NO_ERROR;
+    fd_set readfds;
+    fd_set tempfds;
+    int32_t maxfd;
     std::vector<std::thread> workers;
     struct sockaddr_in client_addr;
     socklen_t addrlen = sizeof(struct sockaddr_in);
 
+    FD_ZERO(&readfds);
+    FD_SET(mSockfd, &readfds);
+    maxfd = mSockfd;
+
     workers.push_back(std::thread(threadSdl));
-    while(SUCCEED(rc)) {
-        int acceptfd = 0;
-        acceptfd = accept(mSockfd, (struct sockaddr *)&client_addr, &addrlen);
-        if (acceptfd < 0) {
-            LOGE("fail to accept %s", strerror(errno));
-            rc = CLIENT_ERROR;
-        } else {
-            LOGI("acceptfd %d %s ---> %d\n", acceptfd, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+
+    while (!mQuit) {
+        struct timeval timeout;
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+        tempfds = readfds;
+        int32_t fdCount = select(maxfd + 1, &tempfds, NULL, NULL, &timeout);
+        if (fdCount < 0) {
+            LOGE("fail to select %s", strerror(errno));
+            rc = SYS_ERROR;
+        } else if (fdCount == 0) {
+            LOGI("select timeout %s, mSockfd %d", strerror(errno), mSockfd);
         }
 
         if (SUCCEED(rc)) {
-            workers.push_back(std::thread(threadSocket, acceptfd));
+            for (int32_t i = 0; i < maxfd + 1; i++) {
+                if (FD_ISSET(i, &readfds)) {
+                    if (i == mSockfd) {
+                        int acceptfd = 0;
+                        acceptfd = accept(mSockfd, (struct sockaddr *)&client_addr, &addrlen);
+                        if (acceptfd < 0) {
+                            LOGE("fail to accept %s", strerror(errno));
+                            rc = CLIENT_ERROR;
+                        } else {
+                            LOGI("acceptfd %d %s ---> %d\n", acceptfd, inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                        }
+                        if (SUCCEED(rc)) {
+                            workers.push_back(std::thread(threadSocket, acceptfd));
+                        }
+                    }
+                }
+            }
+        }
+
+        SDL_Event event;
+        event.type = 0;
+        while (SDL_PollEvent(&event)) {
+            LOGI("event %d %d", event.type, event.window.event);
+            switch (event.type) {
+                case SDL_WINDOWEVENT:
+                     if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                        mQuit = true;
+                    }
+                break;
+                case SDL_QUIT:
+                case SDL_APP_WILLENTERBACKGROUND:
+                case SDL_APP_DIDENTERBACKGROUND:
+                    mQuit = true;
+                    break;
+            }
         }
     }
-
+    sem_post(&mSocket2Sdl);
     std::for_each(workers.begin(), workers.end(), [](std::thread &t){t.join();LOGI("thread exit");});
 
-    return 0;
+    return rc;
 }
 
 int32_t Sdl::release()
 {
     int32_t rc = NO_ERROR;
+
+    if (SUCCEED(rc)) {
+        mQuit = false;
+        close(mSockfd);
+    }
 
     if (NOTNULL(mRender)) {
         SDL_DestroyRenderer(mRender);
@@ -535,24 +580,16 @@ int32_t Sdl::release()
         SDL_Quit();
     }
 
-    close(mSockfd);
-
     return rc;
 }
 
 Sdl::Sdl() :
-    mId(0),
-    mWinCreated(false),
-    mTotalFrame(0),
-    mPercentage(0),
-    mFrameNum(0),
     mSockfd(0)
 {
 }
 
 Sdl::~Sdl()
 {
-    mWinCreated = false;
     release();
 }
 
